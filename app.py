@@ -1,13 +1,18 @@
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import tkinter as tk
+import darkdetect
+
 from modules.search_tool import SearchTool
 from modules.duplicate_tool import DuplicateTool
 
 
+
 class SmartUtilityHub(ttk.Window):
     def __init__(self):
-        super().__init__(themename="auto")
+        #super().__init__(themename="auto")
+        theme = "darkly" if darkdetect.isDark() else "flatly"
+        super().__init__(themename=theme)
         self.title("Smart Utility Hub v1.0")
         self.geometry("900x600")
         self.minsize(800, 500)

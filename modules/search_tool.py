@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox
 import threading
 import subprocess
 import platform
+import darkdetect
 
 
 class SearchTool(ttk.Frame):
