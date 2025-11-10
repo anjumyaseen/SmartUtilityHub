@@ -1,4 +1,5 @@
 import os
+import fnmatch
 import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
@@ -6,7 +7,7 @@ from tkinter import filedialog, messagebox
 import threading
 import subprocess
 import platform
-import darkdetect
+
 
 
 class SearchTool(ttk.Frame):
@@ -31,6 +32,28 @@ class SearchTool(ttk.Frame):
         self.btn_search = ttk.Button(frm_top, text="Search", bootstyle="success", command=self.start_search)
         self.btn_search.pack(side=LEFT, padx=5)
 
+        frm_filters = ttk.Frame(self)
+        frm_filters.pack(pady=5)
+
+        ttk.Label(frm_filters, text="Filter by type:").pack(side=LEFT, padx=5)
+        self.file_type = ttk.Combobox(
+            frm_filters,
+            values=["All", ".pdf", ".docx", ".xlsx", ".txt", ".png", ".jpg"],
+            state="readonly",
+            width=10,
+        )
+        self.file_type.set("All")
+        self.file_type.pack(side=LEFT, padx=5)
+
+        self.var_recursive = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frm_filters, text="Search subfolders", variable=self.var_recursive).pack(side=LEFT, padx=10)
+
+        self.lbl_selected = ttk.Label(self, text="No folders selected", bootstyle="secondary")
+        self.lbl_selected.pack(fill=X, padx=10, pady=5)
+
+        self.lbl_status = ttk.Label(self, text="Ready", bootstyle="secondary")
+        self.lbl_status.pack(fill=X, padx=10)
+
         self.progress = ttk.Progressbar(self, mode="indeterminate")
         self.progress.pack(fill=X, padx=10, pady=5)
 
@@ -44,27 +67,56 @@ class SearchTool(ttk.Frame):
         folder = filedialog.askdirectory(title="Select Folder")
         if folder:
             self.folder_paths.append(folder)
-            messagebox.showinfo("Folder Added", f"Added: {folder}")
+            self._update_selected_label()
+
+    def _update_selected_label(self):
+        if not self.folder_paths:
+            text = "No folders selected"
+        else:
+            text = "Folders: " + "; ".join(self.folder_paths)
+        self.lbl_selected.config(text=text)
 
     def start_search(self):
         query = self.entry_query.get().strip()
         if not self.folder_paths or not query:
             messagebox.showwarning("Input Missing", "Please select folder(s) and enter search term.")
             return
+        self.lbl_status.config(text="Searching...")
         threading.Thread(target=self.search_files, args=(query,), daemon=True).start()
 
     def search_files(self, query):
         self.result_list.delete(0, tk.END)
         self.progress.start()
         count = 0
+        selected_ext = self.file_type.get().lower()
+        has_wildcard = any(ch in query for ch in "*?")
+        lowered_query = query.lower()
+
         for folder in self.folder_paths:
-            for root, _, files in os.walk(folder):
+            if self.var_recursive.get():
+                walker = os.walk(folder)
+            else:
+                files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
+                walker = [(folder, [], files)]
+
+            for root, _, files in walker:
                 for f in files:
-                    if query.lower() in f.lower():
-                        full_path = os.path.join(root, f)
-                        self.result_list.insert(tk.END, full_path)
-                        count += 1
+                    file_lower = f.lower()
+                    if has_wildcard:
+                        match = fnmatch.fnmatch(file_lower, lowered_query)
+                    else:
+                        match = lowered_query in file_lower
+                    if not match:
+                        continue
+                    if selected_ext != "all" and not file_lower.endswith(selected_ext):
+                        continue
+                    full_path = os.path.join(root, f)
+                    self.result_list.insert(tk.END, full_path)
+                    count += 1
+
         self.progress.stop()
+        self.lbl_status.config(text=f"Completed search in {len(self.folder_paths)} folder(s).")
+        self._update_selected_label()
         messagebox.showinfo("Search Complete", f"Found {count} matching files.")
 
     def open_file(self):
