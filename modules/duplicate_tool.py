@@ -52,6 +52,21 @@ class DuplicateTool(ttk.Frame):
         self.filter_entry = ttk.Entry(frm_filter, width=30)
         self.filter_entry.pack(side=LEFT, padx=5)
 
+        frm_limits = ttk.Frame(self)
+        frm_limits.pack(fill=X, padx=10, pady=5)
+        ttk.Label(frm_limits, text="Max depth:").pack(side=LEFT)
+        self.max_depth_var = tk.StringVar(value="")
+        ttk.Entry(frm_limits, textvariable=self.max_depth_var, width=6).pack(side=LEFT, padx=5)
+
+        ttk.Label(frm_limits, text="Exclude:").pack(side=LEFT, padx=5)
+        self.var_exclude_git = tk.BooleanVar(value=True)
+        self.var_exclude_node = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frm_limits, text=".git", variable=self.var_exclude_git).pack(side=LEFT)
+        ttk.Checkbutton(frm_limits, text="node_modules", variable=self.var_exclude_node).pack(side=LEFT, padx=5)
+
+        self.exclude_dirs_var = tk.StringVar(value="")
+        ttk.Entry(frm_limits, textvariable=self.exclude_dirs_var, width=25).pack(side=LEFT, padx=5)
+
         self.lbl_status = ttk.Label(self, text="Ready", bootstyle="secondary")
         self.lbl_status.pack(fill=X, padx=10)
 
@@ -129,11 +144,14 @@ class DuplicateTool(ttk.Frame):
         pattern_has_wildcard = any(ch in pattern for ch in "*?") if pattern else False
 
         size_map = {}
+        max_depth = self._get_max_depth()
+        excluded_dirs = self._get_excluded_dirs()
+
         for folder in self.folder_paths:
             if self.stop_event.is_set():
                 stopped = True
                 break
-            for root, _, files in os.walk(folder):
+            for root, dirs, files in self._limited_walk(folder, max_depth, excluded_dirs):
                 self._set_status(f"Indexing: {root}")
                 if self.stop_event.is_set():
                     stopped = True
@@ -211,6 +229,40 @@ class DuplicateTool(ttk.Frame):
         if has_wildcard:
             return fnmatch.fnmatch(file_lower, pattern) or fnmatch.fnmatch(full_lower, pattern)
         return pattern in file_lower or pattern in full_lower
+
+    def _get_max_depth(self):
+        value = self.max_depth_var.get().strip()
+        if not value:
+            return None
+        try:
+            depth = int(value)
+            return depth if depth >= 0 else None
+        except ValueError:
+            return None
+
+    def _get_excluded_dirs(self):
+        excluded = set()
+        if self.var_exclude_git.get():
+            excluded.add(".git")
+        if self.var_exclude_node.get():
+            excluded.add("node_modules")
+        raw = self.exclude_dirs_var.get().strip()
+        if raw:
+            excluded.update(part.strip().lower() for part in raw.split(",") if part.strip())
+        return excluded
+
+    def _limited_walk(self, root_folder, max_depth, excluded_dirs):
+        for current_root, dirs, files in os.walk(root_folder):
+            rel = os.path.relpath(current_root, root_folder)
+            depth = 0 if rel == "." else rel.count(os.sep)
+
+            if excluded_dirs:
+                dirs[:] = [d for d in dirs if d.lower() not in excluded_dirs]
+
+            if max_depth is not None and depth >= max_depth:
+                dirs[:] = []
+
+            yield current_root, dirs, files
 
     def open_file(self):
         try:
