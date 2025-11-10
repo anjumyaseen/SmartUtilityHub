@@ -1,5 +1,6 @@
 import os
 import hashlib
+import fnmatch
 import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
@@ -12,7 +13,9 @@ import platform
 class DuplicateTool(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
-        self.folder = None
+        self.folder_paths = []
+        self.stop_event = threading.Event()
+        self.scan_thread = None
         self.create_widgets()
 
     def create_widgets(self):
@@ -27,6 +30,31 @@ class DuplicateTool(ttk.Frame):
         self.btn_scan = ttk.Button(frm_top, text="Scan for Duplicates", bootstyle="warning", command=self.start_scan)
         self.btn_scan.pack(side=LEFT, padx=5)
 
+        self.btn_stop = ttk.Button(
+            frm_top,
+            text="Stop",
+            bootstyle="danger-outline",
+            command=self.stop_scan,
+            state=DISABLED,
+        )
+        self.btn_stop.pack(side=LEFT, padx=5)
+
+        ttk.Button(frm_top, text="Clear Folders", bootstyle="secondary-outline", command=self.clear_folders).pack(
+            side=LEFT, padx=5
+        )
+
+        self.lbl_selected = ttk.Label(self, text="No folders selected", bootstyle="secondary")
+        self.lbl_selected.pack(fill=X, padx=10, pady=5)
+
+        frm_filter = ttk.Frame(self)
+        frm_filter.pack(fill=X, padx=10, pady=5)
+        ttk.Label(frm_filter, text="Filter (supports * and ?):").pack(side=LEFT)
+        self.filter_entry = ttk.Entry(frm_filter, width=30)
+        self.filter_entry.pack(side=LEFT, padx=5)
+
+        self.lbl_status = ttk.Label(self, text="Ready", bootstyle="secondary")
+        self.lbl_status.pack(fill=X, padx=10)
+
         self.progress = ttk.Progressbar(self, mode="indeterminate")
         self.progress.pack(fill=X, padx=10, pady=5)
 
@@ -39,14 +67,47 @@ class DuplicateTool(ttk.Frame):
     def choose_folder(self):
         folder = filedialog.askdirectory(title="Select Folder to Scan")
         if folder:
-            self.folder = folder
-            messagebox.showinfo("Folder Selected", f"Selected: {folder}")
+            self.folder_paths.append(folder)
+            self._update_selected_label()
+
+    def _update_selected_label(self):
+        if not self.folder_paths:
+            text = "No folders selected"
+        else:
+            text = "Folders: " + "; ".join(self.folder_paths)
+        self.lbl_selected.config(text=text)
+
+    def clear_folders(self):
+        if self.scan_thread and self.scan_thread.is_alive():
+            messagebox.showwarning("Scan Running", "Stop the current scan before clearing folders.")
+            return
+        if self.folder_paths:
+            self.folder_paths.clear()
+            self._update_selected_label()
+            self._set_status("Cleared selected folders.")
+
+    def _set_status(self, text):
+        self.lbl_status.config(text=text)
+        self.lbl_status.update_idletasks()
 
     def start_scan(self):
-        if not self.folder:
-            messagebox.showwarning("Select Folder", "Please choose a folder first.")
+        if not self.folder_paths:
+            messagebox.showwarning("Select Folder", "Please choose at least one folder first.")
             return
-        threading.Thread(target=self.scan_duplicates, daemon=True).start()
+        if self.scan_thread and self.scan_thread.is_alive():
+            messagebox.showinfo("Scan Running", "Please wait for the current scan to finish or stop it first.")
+            return
+        self.stop_event.clear()
+        self.btn_scan.config(state=DISABLED)
+        self.btn_stop.config(state=NORMAL)
+        self._set_status("Scanning duplicates...")
+        self.scan_thread = threading.Thread(target=self.scan_duplicates, daemon=True)
+        self.scan_thread.start()
+
+    def stop_scan(self):
+        if self.scan_thread and self.scan_thread.is_alive():
+            self.stop_event.set()
+            self._set_status("Stopping scan...")
 
     def hash_file(self, path):
         try:
@@ -60,27 +121,96 @@ class DuplicateTool(ttk.Frame):
 
     def scan_duplicates(self):
         self.result_list.delete(0, tk.END)
+        self._set_status("Indexing files...")
         self.progress.start()
-        seen = {}
-        duplicates = []
+        stopped = False
 
-        for root, _, files in os.walk(self.folder):
-            for f in files:
-                full_path = os.path.join(root, f)
-                h = self.hash_file(full_path)
-                if h:
-                    if h in seen:
-                        duplicates.append(full_path)
+        pattern = self.filter_entry.get().strip().lower()
+        pattern_has_wildcard = any(ch in pattern for ch in "*?") if pattern else False
+
+        size_map = {}
+        for folder in self.folder_paths:
+            if self.stop_event.is_set():
+                stopped = True
+                break
+            for root, _, files in os.walk(folder):
+                self._set_status(f"Indexing: {root}")
+                if self.stop_event.is_set():
+                    stopped = True
+                    break
+                for f in files:
+                    if self.stop_event.is_set():
+                        stopped = True
+                        break
+                    full_path = os.path.join(root, f)
+                    if pattern and not self._matches_filter(full_path, f, pattern, pattern_has_wildcard):
+                        continue
+                    try:
+                        size = os.path.getsize(full_path)
+                    except (OSError, PermissionError):
+                        continue
+                    size_map.setdefault(size, []).append(full_path)
+                if stopped:
+                    break
+            if stopped:
+                break
+
+        duplicates = []
+        duplicate_set = set()
+        if not stopped:
+            self._set_status("Comparing candidates...")
+            for paths in size_map.values():
+                if len(paths) < 2:
+                    continue
+                hash_map = {}
+                for path in paths:
+                    self._set_status(f"Hashing: {path}")
+                    if self.stop_event.is_set():
+                        stopped = True
+                        break
+                    h = self.hash_file(path)
+                    if not h:
+                        continue
+                    if h in hash_map:
+                        original = hash_map[h]
+                        if original not in duplicate_set:
+                            duplicates.append(original)
+                            duplicate_set.add(original)
+                        if path not in duplicate_set:
+                            duplicates.append(path)
+                            duplicate_set.add(path)
                     else:
-                        seen[h] = full_path
+                        hash_map[h] = path
+                if stopped:
+                    break
 
         self.progress.stop()
+        self.btn_scan.config(state=NORMAL)
+        self.btn_stop.config(state=DISABLED)
+        self.stop_event.clear()
+
+        if stopped:
+            self._set_status("Scan stopped.")
+            messagebox.showinfo("Scan Stopped", "Duplicate scan was stopped before completion.")
+            return
+
         if duplicates:
             for dup in duplicates:
                 self.result_list.insert(tk.END, dup)
             messagebox.showinfo("Scan Complete", f"Found {len(duplicates)} duplicate files.")
+            self._set_status(f"Found duplicates in {len(self.folder_paths)} folder(s).")
         else:
             messagebox.showinfo("Scan Complete", "No duplicates found.")
+            self._set_status("No duplicates found.")
+
+    def _matches_filter(self, full_path, filename, pattern, has_wildcard):
+        if not pattern:
+            return True
+        full_lower = full_path.lower()
+        file_lower = filename.lower()
+        if has_wildcard:
+            return fnmatch.fnmatch(file_lower, pattern) or fnmatch.fnmatch(full_lower, pattern)
+        return pattern in file_lower or pattern in full_lower
 
     def open_file(self):
         try:

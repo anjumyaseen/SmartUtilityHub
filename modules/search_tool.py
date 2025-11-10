@@ -25,6 +25,10 @@ class SearchTool(ttk.Frame):
         self.btn_choose = ttk.Button(frm_top, text="Choose Folder(s)", command=self.choose_folder)
         self.btn_choose.pack(side=LEFT, padx=5)
 
+        ttk.Button(frm_top, text="Clear Folders", bootstyle="secondary-outline", command=self.clear_folders).pack(
+            side=LEFT, padx=5
+        )
+
         self.entry_query = ttk.Entry(frm_top, width=40)
         self.entry_query.pack(side=LEFT, padx=5)
         self.entry_query.insert(0, "Enter filename or keyword")
@@ -68,6 +72,12 @@ class SearchTool(ttk.Frame):
         if folder:
             self.folder_paths.append(folder)
             self._update_selected_label()
+
+    def clear_folders(self):
+        if self.folder_paths:
+            self.folder_paths.clear()
+            self._update_selected_label()
+            self.lbl_status.config(text="Cleared selected folders.")
 
     def _update_selected_label(self):
         if not self.folder_paths:
