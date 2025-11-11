@@ -266,8 +266,13 @@ class DuplicateTool(ttk.Frame):
             self._set_status("Cleared selected folders.")
 
     def _set_status(self, text):
-        self.lbl_status.config(text=text)
-        self.lbl_status.update_idletasks()
+        if not hasattr(self, "lbl_status") or not self.lbl_status.winfo_exists():
+            return
+        self.lbl_status.after(0, lambda: self._safe_set_status(text))
+
+    def _safe_set_status(self, text):
+        if hasattr(self, "lbl_status") and self.lbl_status.winfo_exists():
+            self.lbl_status.config(text=text)
 
     def start_scan(self):
         if not self.folder_paths:
