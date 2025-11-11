@@ -14,19 +14,31 @@ class DuplicateTool(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.folder_paths = []
+        self.exclusions = {"folders": {"git", "node_modules"}, "names": set()}
         self.stop_event = threading.Event()
         self.scan_thread = None
         self.duplicate_groups = []
         self.group_display_count = 0
         self.group_nodes = {}
         self.page_size = 50
+        self.system_skip_tokens = {
+            "\\windows",
+            "\\program files",
+            "\\program files (x86)",
+            "\\programdata",
+            "\\appdata",
+            "\\$recycle.bin",
+            "\\system volume information",
+        }
         self.create_widgets()
 
     def create_widgets(self):
         ttk.Label(self, text="🧩 Duplicate Finder", font=("Segoe UI", 12, "bold")).pack(pady=10)
 
+        self.var_filters_open = tk.BooleanVar(value=False)
+
         frm_top = ttk.Frame(self)
-        frm_top.pack(pady=5)
+        frm_top.pack(pady=5, fill=X)
 
         self.btn_choose = ttk.Button(frm_top, text="Choose Folder", command=self.choose_folder)
         self.btn_choose.pack(side=LEFT, padx=5)
@@ -47,30 +59,67 @@ class DuplicateTool(ttk.Frame):
             side=LEFT, padx=5
         )
 
+        ttk.Checkbutton(
+            frm_top,
+            text="Show filters",
+            variable=self.var_filters_open,
+            bootstyle="round-toggle",
+            command=self._toggle_filters,
+        ).pack(side=LEFT, padx=5)
+
+        quick_row = ttk.Frame(self)
+        quick_row.pack(fill=X, padx=10, pady=(0, 6))
+        ttk.Label(quick_row, text="Max depth:").pack(side=LEFT)
+        self.max_depth_var = tk.StringVar(value="")
+        ttk.Entry(quick_row, textvariable=self.max_depth_var, width=6).pack(side=LEFT, padx=5)
+
+        ttk.Label(quick_row, text="File name filter (supports * and ?):").pack(side=LEFT, padx=(12, 5))
+        self.filter_entry = ttk.Entry(quick_row, width=24)
+        self.filter_entry.pack(side=LEFT, padx=5)
+        self._set_placeholder(self.filter_entry, "optional pattern")
+
         self.lbl_selected = ttk.Label(self, text="No folders selected", bootstyle="secondary")
         self.lbl_selected.pack(fill=X, padx=10, pady=5)
 
-        frm_filter = ttk.Frame(self)
-        frm_filter.pack(fill=X, padx=10, pady=5)
-        ttk.Label(frm_filter, text="Filter (supports * and ?):").pack(side=LEFT)
-        self.filter_entry = ttk.Entry(frm_filter, width=30)
-        self.filter_entry.pack(side=LEFT, padx=5)
+        header = ttk.Frame(self)
+        header.pack(fill=X, padx=10, pady=(0, 2))
+        ttk.Label(header, text="Filters & Exclusions", font=("Segoe UI", 10, "bold")).pack(side=LEFT)
+        self.lbl_filters = ttk.Label(header, text="(0 applied)", bootstyle="secondary")
+        self.lbl_filters.pack(side=LEFT, padx=6)
 
-        frm_limits = ttk.Frame(self)
-        frm_limits.pack(fill=X, padx=10, pady=5)
-        ttk.Label(frm_limits, text="Max depth:").pack(side=LEFT)
-        self.max_depth_var = tk.StringVar(value="")
-        ttk.Entry(frm_limits, textvariable=self.max_depth_var, width=6).pack(side=LEFT, padx=5)
+        self.filters_frame = ttk.Frame(self)
+        self.filters_frame.pack_forget()
 
-        ttk.Label(frm_limits, text="Exclude:").pack(side=LEFT, padx=5)
-        self.var_exclude_git = tk.BooleanVar(value=True)
-        self.var_exclude_node = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm_limits, text=".git", variable=self.var_exclude_git).pack(side=LEFT)
-        ttk.Checkbutton(frm_limits, text="node_modules", variable=self.var_exclude_node).pack(side=LEFT, padx=5)
+        ttk.Label(
+            self.filters_frame,
+            text="Exclude anything containing these names or extensions (like a .gitignore).",
+            bootstyle="secondary",
+        ).pack(anchor="w", padx=10, pady=(4, 0))
 
-        self.exclude_dirs_var = tk.StringVar(value="")
-        ttk.Entry(frm_limits, textvariable=self.exclude_dirs_var, width=25).pack(side=LEFT, padx=5)
-        ttk.Label(frm_limits, text="(contains match, e.g. .git, logs, docker)").pack(side=LEFT, padx=5)
+        folder_row = ttk.Frame(self.filters_frame)
+        folder_row.pack(fill=X, pady=6, padx=10)
+        ttk.Label(folder_row, text="Common folders:").pack(anchor="w")
+        self.folder_preset_vars = {}
+        for label in [".git", "node_modules"]:
+            token = label.lstrip(".").lower()
+            var = tk.BooleanVar(value=True)
+            chk = ttk.Checkbutton(
+                folder_row, text=label, variable=var, command=lambda v=var, name=token: self._toggle_folder_chip(v, name)
+            )
+            chk.pack(side=LEFT, padx=4)
+            self.folder_preset_vars[label] = var
+            self.exclusions["folders"].add(token)
+
+        name_row = ttk.Frame(self.filters_frame)
+        name_row.pack(fill=X, pady=6, padx=10)
+        ttk.Label(name_row, text="Exclude names:").pack(side=LEFT, padx=(0, 6))
+        self.entry_name = ttk.Entry(name_row, width=24)
+        self.entry_name.pack(side=LEFT)
+        self._set_placeholder(self.entry_name, "e.g., Thumbs.db or *.tmp")
+        ttk.Button(name_row, text="Add", command=self._add_name).pack(side=LEFT, padx=6)
+
+        self.chips_frame = ttk.Frame(self.filters_frame)
+        self.chips_frame.pack(fill=X, padx=10, pady=(2, 8))
 
         self.lbl_status = ttk.Label(self, text="Ready", bootstyle="secondary")
         self.lbl_status.pack(fill=X, padx=10)
@@ -108,6 +157,92 @@ class DuplicateTool(ttk.Frame):
         )
         self.btn_dup_show_more.pack(side=RIGHT)
 
+        self._refresh_chips()
+
+    def _set_placeholder(self, entry, text):
+        entry.placeholder_text = text
+
+        def on_focus_in(_):
+            if entry.get() == text:
+                entry.delete(0, tk.END)
+
+        def on_focus_out(_):
+            if not entry.get():
+                entry.insert(0, text)
+
+        entry.insert(0, text)
+        entry.bind("<FocusIn>", on_focus_in)
+        entry.bind("<FocusOut>", on_focus_out)
+
+    def _toggle_filters(self):
+        if self.var_filters_open.get():
+            self.filters_frame.pack(fill=X, padx=0, pady=(0, 6))
+        else:
+            self.filters_frame.pack_forget()
+
+    def _add_name(self):
+        name = self.entry_name.get().strip().lower()
+        placeholder = getattr(self.entry_name, "placeholder_text", "")
+        if not name or name == placeholder.lower():
+            return
+        self.exclusions["names"].add(name)
+        self.entry_name.delete(0, tk.END)
+        self._refresh_chips()
+
+    def _toggle_folder_chip(self, var, token):
+        if var.get():
+            self.exclusions["folders"].add(token)
+        else:
+            self.exclusions["folders"].discard(token)
+        self._refresh_chips()
+
+    def _refresh_chips(self):
+        if not hasattr(self, "chips_frame"):
+            return
+        for child in self.chips_frame.winfo_children():
+            child.destroy()
+
+        count = 0
+
+        def make_chip(label, bucket, value):
+            nonlocal count
+            count += 1
+            frame = ttk.Frame(self.chips_frame, bootstyle="secondary")
+            ttk.Label(frame, text=label).pack(side=LEFT, padx=6)
+            ttk.Button(frame, text="x", width=2, command=lambda: self._remove_chip(bucket, value)).pack(side=LEFT)
+            frame.pack(side=LEFT, padx=4, pady=2)
+
+        for val in sorted(self.exclusions["folders"]):
+            make_chip(f"folder:{val}", "folders", val)
+        for val in sorted(self.exclusions["names"]):
+            make_chip(f"name:{val}", "names", val)
+
+        if hasattr(self, "lbl_filters"):
+            self.lbl_filters.config(text=f"({count} applied)")
+
+    def _remove_chip(self, bucket, value):
+        self.exclusions[bucket].discard(value)
+        if bucket == "folders":
+            for label, var in self.folder_preset_vars.items():
+                if value == label.lstrip(".").lower():
+                    var.set(False)
+        self._refresh_chips()
+
+    def _path_excluded(self, folder, name):
+        full_lower = os.path.join(folder, name).lower()
+        base = name.lower()
+        for tok in self.exclusions["folders"]:
+            if tok in full_lower:
+                return True
+        for pattern in self.exclusions["names"]:
+            if fnmatch.fnmatch(base, pattern):
+                return True
+        return False
+
+    def _exclusion_summary(self):
+        items = list(self.exclusions["folders"]) + list(self.exclusions["names"])
+        return ", ".join(sorted(items))
+
     def choose_folder(self):
         folder = filedialog.askdirectory(title="Select Folder to Scan")
         if folder:
@@ -143,14 +278,13 @@ class DuplicateTool(ttk.Frame):
             return
         self._reset_duplicate_view()
         self.stop_event.clear()
-        excluded_terms = self._get_excluded_terms()
-        if excluded_terms:
-            self._set_status(f"Scanning duplicates... Excluding: {', '.join(excluded_terms)}")
+        summary = self._exclusion_summary()
+        if summary:
+            self._set_status(f"Scanning duplicates... Excluding: {summary}")
         else:
             self._set_status("Scanning duplicates...")
         self.btn_scan.config(state=DISABLED)
         self.btn_stop.config(state=NORMAL)
-        self._set_status("Scanning duplicates...")
         self.scan_thread = threading.Thread(target=self.scan_duplicates, daemon=True)
         self.scan_thread.start()
 
@@ -174,18 +308,23 @@ class DuplicateTool(ttk.Frame):
         self.progress.start()
         stopped = False
 
-        pattern = self.filter_entry.get().strip().lower()
+        pattern = ""
+        if hasattr(self, "filter_entry"):
+            value = self.filter_entry.get().strip().lower()
+            placeholder = getattr(self.filter_entry, "placeholder_text", "")
+            if value and value != placeholder.lower():
+                pattern = value
         pattern_has_wildcard = any(ch in pattern for ch in "*?") if pattern else False
 
         size_map = {}
         max_depth = self._get_max_depth()
-        excluded_terms = self._get_excluded_terms()
+        folder_tokens = set(self.exclusions["folders"])
 
         for folder in self.folder_paths:
             if self.stop_event.is_set():
                 stopped = True
                 break
-            for root, dirs, files in self._limited_walk(folder, max_depth, excluded_terms):
+            for root, dirs, files in self._limited_walk(folder, max_depth, folder_tokens | self.system_skip_tokens):
                 self._set_status(f"Indexing: {root}")
                 if self.stop_event.is_set():
                     stopped = True
@@ -195,9 +334,9 @@ class DuplicateTool(ttk.Frame):
                         stopped = True
                         break
                     full_path = os.path.join(root, f)
-                    if excluded_terms and self._contains_excluded(full_path, excluded_terms):
-                        continue
                     if pattern and not self._matches_filter(full_path, f, pattern, pattern_has_wildcard):
+                        continue
+                    if self._path_excluded(root, f):
                         continue
                     try:
                         size = os.path.getsize(full_path)
@@ -322,38 +461,20 @@ class DuplicateTool(ttk.Frame):
         except ValueError:
             return None
 
-    def _get_excluded_terms(self):
-        excluded = []
-        if self.var_exclude_git.get():
-            excluded.append("git")
-        if self.var_exclude_node.get():
-            excluded.append("node_modules")
-        raw = self.exclude_dirs_var.get().strip()
-        if raw:
-            excluded.extend(part.strip().lstrip(".").lower() for part in raw.split(",") if part.strip())
-        return [pattern for pattern in excluded if pattern]
-
-    def _limited_walk(self, root_folder, max_depth, excluded_terms):
+    def _limited_walk(self, root_folder, max_depth, tokens):
         for current_root, dirs, files in os.walk(root_folder):
             rel = os.path.relpath(current_root, root_folder)
             depth = 0 if rel == "." else rel.count(os.sep)
 
-            if excluded_terms:
+            if tokens:
                 dirs[:] = [
-                    d for d in dirs if not self._contains_excluded(os.path.join(current_root, d), excluded_terms)
+                    d for d in dirs if not any(tok in os.path.join(current_root, d).lower() for tok in tokens)
                 ]
 
             if max_depth is not None and depth >= max_depth:
                 dirs[:] = []
 
             yield current_root, dirs, files
-
-    def _contains_excluded(self, path, patterns):
-        path_lower = os.path.normpath(path).lower()
-        for pattern in patterns:
-            if fnmatch.fnmatch(path_lower, f"*{pattern}*") or pattern in path_lower:
-                return True
-        return False
 
     def open_file(self):
         selection = self.result_tree.selection()
