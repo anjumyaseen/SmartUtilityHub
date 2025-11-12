@@ -235,8 +235,12 @@ class DuplicateTool(ttk.Frame):
             if tok in full_lower:
                 return True
         for pattern in self.exclusions["names"]:
-            if fnmatch.fnmatch(base, pattern):
-                return True
+            if any(ch in pattern for ch in "*?"):
+                if fnmatch.fnmatch(base, pattern) or fnmatch.fnmatch(full_lower, pattern):
+                    return True
+            else:
+                if pattern in base or pattern in full_lower:
+                    return True
         return False
 
     def _exclusion_summary(self):
