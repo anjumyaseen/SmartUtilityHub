@@ -14,6 +14,9 @@ venv/
 build/
 dist/
 *.spec
+*.exe
+*.msi
+SmartUtilityHub.spec
 
 # OS / Editor files
 .DS_Store
@@ -26,10 +29,20 @@ Thumbs.db
 *.tmp
 *.bak
 *.swp
+.coverage
+coverage.xml
+htmlcov/
 
 # Cache
 .cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.egg-info/
+
+# Env files
+.env
+.env.*
 
 # Internal files
 docs/
