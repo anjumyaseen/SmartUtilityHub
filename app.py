@@ -1,7 +1,9 @@
+import os
+import tkinter as tk
+
+import darkdetect
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-import tkinter as tk
-import darkdetect
 
 from modules.search_tool import SearchTool
 from modules.duplicate_tool import DuplicateTool
@@ -16,8 +18,17 @@ class SmartUtilityHub(ttk.Window):
         self.title("Smart Utility Hub v1.0")
         self.geometry("900x600")
         self.minsize(800, 500)
+        self._set_window_icon()
 
         self._setup_ui()
+
+    def _set_window_icon(self):
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "icons", "smartutilityhub.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass
 
     def _setup_ui(self):
         # Sidebar frame
