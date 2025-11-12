@@ -13,6 +13,11 @@ python app.py
 
 ## Build Executable
 ```bash
-pyinstaller --onefile --windowed --name SmartUtilityHub --icon assets/icons/smartutilityhub.ico app.py
+pyinstaller ^
+  --onefile --windowed ^
+  --name SmartUtilityHub ^
+  --icon assets/icons/smartutilityhub.ico ^
+  --add-data "assets/icons/smartutilityhub.ico;assets/icons" ^
+  app.py
 ```
 The packaged binary will be placed in `dist\SmartUtilityHub.exe`.

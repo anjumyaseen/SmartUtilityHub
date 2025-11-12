@@ -17,6 +17,7 @@ class SearchTool(ttk.Frame):
         self.folder_paths = []
         self.exclusions = {"folders": set(), "names": set()}
         self.include_exts = set()
+        self.folder_preset_vars = {}
         self._all_results = []
         self._render_index = 0
         self.folder_nodes = {}
@@ -104,10 +105,30 @@ class SearchTool(ttk.Frame):
         self.progress = ttk.Progressbar(self, mode="indeterminate")
         self.progress.pack(fill=X, padx=10, pady=5)
 
-        cols = ("Ext", "Size", "Location", "FullPath")
-        self.tree = ttk.Treeview(self, columns=cols, show="tree", selectmode="browse", height=18)
-        self.tree.heading("#0", text="")
-        self.tree.column("#0", width=260, stretch=True, anchor="w")
+        cols = ("Folder", "Ext", "Size", "Location", "FullPath")
+
+        tree_frame = ttk.Frame(self)
+        tree_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
+
+        yscroll = ttk.Scrollbar(tree_frame, orient=VERTICAL)
+        yscroll.pack(side=RIGHT, fill=Y)
+
+        xscroll = ttk.Scrollbar(tree_frame, orient=HORIZONTAL)
+        xscroll.pack(side=BOTTOM, fill=X)
+
+        self.tree = ttk.Treeview(
+            tree_frame,
+            columns=cols,
+            show="tree",
+            selectmode="browse",
+            height=18,
+            yscrollcommand=yscroll.set,
+            xscrollcommand=xscroll.set,
+        )
+        self.tree.heading("#0", text="Name")
+        self.tree.column("#0", width=240, stretch=True, anchor="w")
+        self.tree.heading("Folder", text="Folder")
+        self.tree.column("Folder", width=420, anchor="w", stretch=True)
         self.tree.heading("Ext", text="")
         self.tree.column("Ext", width=60, anchor="w")
         self.tree.heading("Size", text="")
@@ -116,8 +137,10 @@ class SearchTool(ttk.Frame):
         self.tree.column("Location", width=200, anchor="w")
         self.tree.heading("FullPath", text="")
         self.tree.column("FullPath", width=0, stretch=False)
-        self.tree["displaycolumns"] = ("Ext", "Size", "Location")
-        self.tree.pack(fill=BOTH, expand=True, padx=10, pady=5)
+        self.tree["displaycolumns"] = ("Folder", "Ext", "Size", "Location")
+        self.tree.pack(fill=BOTH, expand=True)
+        yscroll.config(command=self.tree.yview)
+        xscroll.config(command=self.tree.xview)
         self.tree.bind("<Double-1>", lambda _e: self.open_file())
 
         btnrow = ttk.Frame(self)
@@ -203,17 +226,34 @@ class SearchTool(ttk.Frame):
             count += 1
             frame = ttk.Frame(self.chips_frame, bootstyle="secondary")
             ttk.Label(frame, text=label).pack(side=LEFT, padx=6)
-            ttk.Button(frame, text="x", width=2, command=lambda: self._remove_chip(bucket, value)).pack(side=LEFT)
+            ttk.Button(frame, text="x", width=2, command=lambda b=bucket, v=value: self._remove_chip(b, v)).pack(
+                side=LEFT
+            )
             frame.pack(side=LEFT, padx=4, pady=2)
+
+        for ext in sorted(self.include_exts):
+            make_chip(ext, "includes", ext)
+
+        for token in sorted(self.exclusions["folders"]):
+            make_chip(f"folder: {token}", "folders", token)
+
+        for pattern in sorted(self.exclusions["names"]):
+            make_chip(f"name: {pattern}", "names", pattern)
 
         self.lbl_filters_title.config(text=f"({count} applied)")
 
     def _remove_chip(self, bucket, value):
-        self.exclusions[bucket].discard(value)
-        if bucket == "folders":
-            for label, var in self.folder_preset_vars.items():
-                if value == label.lstrip(".").lower():
+        if bucket == "includes":
+            self.include_exts.discard(value)
+            for label, var in getattr(self, "include_preset_vars", {}).items():
+                if label.lower() == value.lower():
                     var.set(False)
+        else:
+            self.exclusions[bucket].discard(value)
+            if bucket == "folders":
+                for label, var in getattr(self, "folder_preset_vars", {}).items():
+                    if value == label.lstrip(".").lower():
+                        var.set(False)
         self._refresh_chips()
 
     # ------------------------------------------------------------------ FOLDERS
@@ -236,6 +276,9 @@ class SearchTool(ttk.Frame):
             messagebox.showwarning("Input Missing", "Please select folder(s) and enter search term.")
             return
 
+        lowered_query = query.lower()
+        use_wildcards = any(ch in lowered_query for ch in "*?")
+
         self.lbl_status.config(text="Searching…")
         self.progress.start()
         self._all_results.clear()
@@ -244,10 +287,11 @@ class SearchTool(ttk.Frame):
         for child in self.tree.get_children():
             self.tree.delete(child)
 
-        threading.Thread(target=self._search_files_thread, args=(query,), daemon=True).start()
+        threading.Thread(
+            target=self._search_files_thread, args=(lowered_query, use_wildcards), daemon=True
+        ).start()
 
-    def _search_files_thread(self, query):
-        lowered_query = query.lower()
+    def _search_files_thread(self, lowered_query, use_wildcards):
         results = []
 
         max_depth = self._get_max_depth()
@@ -270,7 +314,7 @@ class SearchTool(ttk.Frame):
                         if not any(tok in os.path.join(root, d).lower() for tok in self.exclusions["folders"])
                     ]
                 for fname in files:
-                    if lowered_query not in fname.lower():
+                    if not self._query_matches(fname, lowered_query, use_wildcards):
                         continue
                     if self._path_excluded(root, fname):
                         continue
@@ -316,7 +360,14 @@ class SearchTool(ttk.Frame):
             folder = item["folder"]
             node = self.folder_nodes.get(folder)
             if not node:
-                node = self.tree.insert("", tk.END, text=folder, open=False)
+                basename = os.path.basename(folder) or folder
+                node = self.tree.insert(
+                    "",
+                    tk.END,
+                    text=basename,
+                    open=False,
+                    values=(folder, "", "", "", folder),
+                )
                 self.folder_nodes[folder] = node
 
             size_str = self._format_size(item["size"])
@@ -324,7 +375,7 @@ class SearchTool(ttk.Frame):
                 node,
                 tk.END,
                 text=item["name"],
-                values=(item["ext"], size_str, item["parent"], item["path"]),
+                values=(item["folder"], item["ext"], size_str, item["parent"], item["path"]),
             )
 
         self._render_index = end
@@ -353,6 +404,12 @@ class SearchTool(ttk.Frame):
                 return True
 
         return False
+
+    def _query_matches(self, filename, lowered_query, use_wildcards):
+        lname = filename.lower()
+        if use_wildcards:
+            return fnmatch.fnmatch(lname, lowered_query)
+        return lowered_query in lname
 
     def _normalize_include_filters(self):
         if not self.include_exts:
@@ -395,7 +452,18 @@ class SearchTool(ttk.Frame):
         selection = self.tree.selection()
         if not selection:
             return None
-        return self.tree.set(selection[0], "FullPath")
+        node = selection[0]
+        # If a folder row is selected, use the folder path stored on the row.
+        path = self.tree.set(node, "FullPath")
+        if path:
+            return path
+        # Otherwise fall back to the parent folder path plus the file name.
+        parent = self.tree.parent(node)
+        if not parent:
+            return None
+        folder = self.tree.set(parent, "FullPath")
+        name = self.tree.item(node, "text")
+        return os.path.join(folder, name)
 
     def open_file(self):
         path = self._selected_path()

@@ -1,4 +1,5 @@
 import os
+import sys
 import tkinter as tk
 
 import darkdetect
@@ -22,13 +23,18 @@ class SmartUtilityHub(ttk.Window):
 
         self._setup_ui()
 
+    def _resource_path(self, *parts):
+        """Locate resource paths both in development and PyInstaller bundles."""
+        base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
+        return os.path.join(base_path, *parts)
+
     def _set_window_icon(self):
-        icon_path = os.path.join(os.path.dirname(__file__), "assets", "icons", "smartutilityhub.ico")
+        icon_path = self._resource_path("assets", "icons", "smartutilityhub.ico")
         if os.path.exists(icon_path):
             try:
                 self.iconbitmap(icon_path)
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"Warning: unable to load window icon ({exc})")
 
     def _setup_ui(self):
         # Sidebar frame
