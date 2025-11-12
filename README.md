@@ -4,7 +4,7 @@ SmartUtilityHub is a lightweight desktop toolkit for Windows that helps you find
 
 [![GitHub release](https://img.shields.io/github/v/release/anjumyaseen/SmartUtilityHub?style=for-the-badge)](https://github.com/anjumyaseen/SmartUtilityHub/releases/latest)
 [![GitHub all releases](https://img.shields.io/github/downloads/anjumyaseen/SmartUtilityHub/total?style=for-the-badge)](https://github.com/anjumyaseen/SmartUtilityHub/releases)
-[![License](https://img.shields.io/github/license/anjumyaseen/SmartUtilityHub?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/github/license/anjumyaseen/SmartUtilityHub?style=for-the-badge)](LICENSE.txt)
 
 ---
 
@@ -160,7 +160,7 @@ Compare with the hash published in `checksums.txt` on the release page. Optional
 
 ## 📄 License & Governance
 
-* License: MIT (see `LICENSE`)
+* License: MIT (see `LICENSE.txt`)
 * Security Policy / Contributing / Code of Conduct: will live under `docs/` as the project grows.
 
 ---
