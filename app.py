@@ -29,12 +29,21 @@ class SmartUtilityHub(ttk.Window):
         return os.path.join(base_path, *parts)
 
     def _set_window_icon(self):
-        icon_path = self._resource_path("assets", "icons", "smartutilityhub.ico")
-        if os.path.exists(icon_path):
+        ico_path = self._resource_path("assets", "icons", "smartutilityhub.ico")
+        png_path = self._resource_path("assets", "icons", "smartutilityhub.png")
+
+        if os.path.exists(ico_path):
             try:
-                self.iconbitmap(icon_path)
+                self.iconbitmap(default=ico_path)
             except Exception as exc:
-                print(f"Warning: unable to load window icon ({exc})")
+                print(f"Warning: unable to load .ico window icon ({exc})")
+
+        if os.path.exists(png_path):
+            try:
+                self._icon_photo = tk.PhotoImage(file=png_path)
+                self.iconphoto(False, self._icon_photo)
+            except Exception as exc:
+                print(f"Warning: unable to load PNG window icon ({exc})")
 
     def _setup_ui(self):
         # Sidebar frame

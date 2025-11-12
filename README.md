@@ -18,6 +18,7 @@ pyinstaller ^
   --name SmartUtilityHub ^
   --icon assets/icons/smartutilityhub.ico ^
   --add-data "assets/icons/smartutilityhub.ico;assets/icons" ^
+  --add-data "assets/icons/smartutilityhub.png;assets/icons" ^
   app.py
 ```
 The packaged binary will be placed in `dist\SmartUtilityHub.exe`.
