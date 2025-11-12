@@ -45,5 +45,5 @@ htmlcov/
 .env.*
 
 # Internal files
-docs/
+overview.txt
 release/

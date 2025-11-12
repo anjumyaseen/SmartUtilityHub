@@ -126,7 +126,7 @@ After building, package + hash files (already scripted in `release/`) for GitHub
 ## 🧪 Known Limitations
 
 * Unsigned binary (SmartScreen will warn on first launch)
-* No cross-machine sync or scheduled background indexing
+* No cross-machine sync or background indexing yet — both planned for future releases.
 
 ---
 
