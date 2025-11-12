@@ -19,31 +19,30 @@ class SmartUtilityHub(ttk.Window):
         self.title("Smart Utility Hub v1.0")
         self.geometry("900x600")
         self.minsize(800, 500)
-        self._set_window_icon()
 
-        self._setup_ui()
+        if getattr(sys, "frozen", False):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.dirname(__file__)
 
-    def _resource_path(self, *parts):
-        """Locate resource paths both in development and PyInstaller bundles."""
-        base_path = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
-        return os.path.join(base_path, *parts)
+        icon_path = os.path.join(base_path, "assets", "icons", "smartutilityhub.ico")
+        png_path = os.path.join(base_path, "assets", "icons", "smartutilityhub.png")
 
-    def _set_window_icon(self):
-        ico_path = self._resource_path("assets", "icons", "smartutilityhub.ico")
-        png_path = self._resource_path("assets", "icons", "smartutilityhub.png")
-
-        if os.path.exists(ico_path):
+        self._icon_photo = None
+        if os.path.exists(icon_path):
             try:
-                self.iconbitmap(default=ico_path)
-            except Exception as exc:
-                print(f"Warning: unable to load .ico window icon ({exc})")
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass
 
         if os.path.exists(png_path):
             try:
                 self._icon_photo = tk.PhotoImage(file=png_path)
                 self.iconphoto(False, self._icon_photo)
-            except Exception as exc:
-                print(f"Warning: unable to load PNG window icon ({exc})")
+            except Exception:
+                self._icon_photo = None
+
+        self._setup_ui()
 
     def _setup_ui(self):
         # Sidebar frame

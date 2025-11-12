@@ -5,10 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('assets/icons/smartutilityhub.ico', 'assets/icons'),
-        ('assets/icons/smartutilityhub.png', 'assets/icons'),
-    ],
+    datas=[('assets/icons/smartutilityhub.ico', 'assets/icons'), ('assets/icons/smartutilityhub.png', 'assets/icons')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
