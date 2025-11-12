@@ -141,7 +141,7 @@ class DuplicateTool(ttk.Frame):
             selectmode="browse",
         )
         self.result_tree.column("#0", stretch=True, anchor="w")
-        self.result_tree.heading("#0", text="Duplicates")
+        self.result_tree.heading("#0", text="")
         self.result_tree.column("full_path", width=0, stretch=False)
         self.result_tree.pack(fill=BOTH, expand=True)
         scrollbar.configure(command=self.result_tree.yview)

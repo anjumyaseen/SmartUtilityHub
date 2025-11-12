@@ -104,21 +104,19 @@ class SearchTool(ttk.Frame):
         self.progress = ttk.Progressbar(self, mode="indeterminate")
         self.progress.pack(fill=X, padx=10, pady=5)
 
-        cols = ("Name", "Ext", "Size", "Location", "FullPath")
-        self.tree = ttk.Treeview(self, columns=cols, show="tree headings", selectmode="browse", height=18)
-        self.tree.heading("#0", text="Folder")
-        self.tree.column("#0", width=240, stretch=True, anchor="w")
-        self.tree.heading("Name", text="Name")
-        self.tree.column("Name", width=180, anchor="w")
-        self.tree.heading("Ext", text="Ext")
+        cols = ("Ext", "Size", "Location", "FullPath")
+        self.tree = ttk.Treeview(self, columns=cols, show="tree", selectmode="browse", height=18)
+        self.tree.heading("#0", text="")
+        self.tree.column("#0", width=260, stretch=True, anchor="w")
+        self.tree.heading("Ext", text="")
         self.tree.column("Ext", width=60, anchor="w")
-        self.tree.heading("Size", text="Size")
+        self.tree.heading("Size", text="")
         self.tree.column("Size", width=80, anchor="e")
-        self.tree.heading("Location", text="Location")
+        self.tree.heading("Location", text="")
         self.tree.column("Location", width=200, anchor="w")
         self.tree.heading("FullPath", text="")
         self.tree.column("FullPath", width=0, stretch=False)
-        self.tree["displaycolumns"] = ("Name", "Ext", "Size", "Location")
+        self.tree["displaycolumns"] = ("Ext", "Size", "Location")
         self.tree.pack(fill=BOTH, expand=True, padx=10, pady=5)
         self.tree.bind("<Double-1>", lambda _e: self.open_file())
 
@@ -254,6 +252,8 @@ class SearchTool(ttk.Frame):
 
         max_depth = self._get_max_depth()
 
+        include_filters = self._normalize_include_filters()
+
         for base in self.folder_paths:
             for root, dirs, files in os.walk(base):
                 self.after(0, lambda path=root: self.lbl_status.config(text=f"Searching… {path}"))
@@ -273,6 +273,8 @@ class SearchTool(ttk.Frame):
                     if lowered_query not in fname.lower():
                         continue
                     if self._path_excluded(root, fname):
+                        continue
+                    if include_filters and not self._matches_includes(fname, include_filters):
                         continue
                     full_path = os.path.join(root, fname)
                     try:
@@ -322,7 +324,7 @@ class SearchTool(ttk.Frame):
                 node,
                 tk.END,
                 text=item["name"],
-                values=(item["name"], item["ext"], size_str, item["parent"], item["path"]),
+                values=(item["ext"], size_str, item["parent"], item["path"]),
             )
 
         self._render_index = end
@@ -352,6 +354,30 @@ class SearchTool(ttk.Frame):
 
         return False
 
+    def _normalize_include_filters(self):
+        if not self.include_exts:
+            return []
+
+        filters = []
+        for token in self.include_exts:
+            if token.startswith("*") or any(ch in token for ch in "*?"):
+                filters.append(("pattern", token.lower()))
+            elif token.startswith("."):
+                filters.append(("ext", token.lower()))
+            else:
+                filters.append(("ext", f".{token.lower()}"))
+        return filters
+
+    def _matches_includes(self, filename, filters):
+        lname = filename.lower()
+        ext = os.path.splitext(lname)[1]
+        for ftype, value in filters:
+            if ftype == "ext" and ext == value:
+                return True
+            if ftype == "pattern" and fnmatch.fnmatch(lname, value):
+                return True
+        return False
+
     # ------------------------------------------------------------------ UTILITIES
     def _format_size(self, num_bytes):
         try:
@@ -369,10 +395,7 @@ class SearchTool(ttk.Frame):
         selection = self.tree.selection()
         if not selection:
             return None
-        values = self.tree.item(selection[0], "values")
-        if not values:
-            return None
-        return values[4]
+        return self.tree.set(selection[0], "FullPath")
 
     def open_file(self):
         path = self._selected_path()
